@@ -1,5 +1,4 @@
 // /project/mine# make && ./main -e 1000000000 -l 5 -s 50 -r 0.05 -d ../mnist
-#include "myfile.h"
 #include <iostream>
 #include <cstdio>
 #include <cstring>

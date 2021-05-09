@@ -49,5 +49,8 @@ all: $(OUTPUT)
 $(OUTPUT): $(SOURCES) $(HEADERS)
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -o $(OUTPUT) $(SOURCES)
 
+run:
+	make main && time ./main -e 1000000000 -l 5 -s 100 -r 0.05 -d ../../mnist
+
 clean:
 	$(RM) $(OUTPUT)
