@@ -48,7 +48,8 @@ double inner_prod(const vfloat& u, const vfloat& v) {
 }
 
 Matrix transpose(const Matrix& m) {
-    if(m.size() == 0) return Matrix();
+    if(m.size() == 0) 
+        return Matrix();
     int n = m[0].size();
     Matrix ret(n, vfloat(m.size()));
     #pragma omp parallel for
@@ -57,8 +58,6 @@ Matrix transpose(const Matrix& m) {
             ret[i][j] = m[j][i];
     return ret;
 }
-
-
 
 vfloat prod(const Matrix& m, const vfloat& v) {
     assert(m.size() > 0);

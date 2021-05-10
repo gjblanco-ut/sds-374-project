@@ -184,10 +184,6 @@ void NeuralNet::train(const int EPOCHS, const float r, const Dataset& dataset, c
             cout << "Calculating cost" << endl;
             double cost = costval(dataset, 0, ntrain);
             cout << cost << endl;
-            if(cost < 1e-1) {
-                cout << "LESS THAN" << endl;
-            }
-            break;
         }
         // if(i % 1000000 == 0) {
         //     print(net);
