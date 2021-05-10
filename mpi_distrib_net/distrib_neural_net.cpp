@@ -279,7 +279,8 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
                     vfloat send_vec(x.first.begin(), x.first.end());
                     send_vec.push_back((float)x.second); 
                     send_requests.push_back(MPI_Request());
-                    cout << procno << ": ISEND 1 size: " << send_vec.size() << " sendto: " << sendto << " tag: " << i / topology_depth << endl; 
+                    // cout << procno << ": ISEND 1 size: " << send_vec.size() << " sendto: " << sendto << " tag: " << i / topology_depth << endl; 
+                    
                     MPI_Isend(send_vec.data(), 
                         (int)send_vec.size(), 
                         MPI_FLOAT, 
@@ -289,15 +290,15 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
                 }
             }
             MPI_Waitall((int)send_requests.size(), send_requests.data(), MPI_STATUSES_IGNORE);
-            cout << procno << ": SENT ALL" << endl;
+            // cout << procno << ": SENT ALL" << endl;
         }
-        const int nsamples_per_node = prev_data.size();
+        const int nsamples_per_node = batchsize / topology_depth;
         // Everyone else receives the a^{[l-1]} data (although nodes in layers l+1 receive it later)
         if(procno != 0) {
             // procno nlayers+1 receives 1, 1 + topology_depth, 1 + 2*topology_depth, ... , etc
             for(int tag = 0; tag < batchsize / topology_depth; tag++) {
                 vfloat recv_vec(prev_layer_size + 1);
-                cout << procno << ": RECV 1 size: " << recv_vec.size() << " recvfrom: " << (layer_number == 0? 0 : procno - 1) << " tag: " << tag << "layer number:" << layer_number << endl;
+                // cout << procno << ": RECV 1 size: " << recv_vec.size() << " recvfrom: " << (layer_number == 0? 0 : procno - 1) << " tag: " << tag << "layer number:" << layer_number << endl;
                 MPI_Recv(recv_vec.data(), 
                         (int)recv_vec.size(), 
                         MPI_FLOAT, 
@@ -307,18 +308,18 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
                 
                 prev_data.push_back(make_pair(recv_vec, *recv_vec.rbegin()));
                 prev_data.rbegin()->first.pop_back(); // delete last element (pair.second => label)
-
-                cout << procno << ": PASS " << tag << endl;
+                // cout << procno << ": PASS " << tag << endl;
             }
         }
         // END STEP 1
-        cout << procno << ": END STEP 1" << endl;
+        cout << procno << ": STEP 2" << endl;
 
         // STEP 2: Calculate z, a, D (first loop in pdf pseudocode) and Send "a" to next layer mpi procs
         vector<vfloat> z(nsamples_per_node); // one z vector per sample in batch portion
         vector<vfloat> a(nsamples_per_node);
         vector<vfloat> D(nsamples_per_node);
         vector<MPI_Request> send_requests;
+        // cout << procno << ": SAMP PER NODE " << nsamples_per_node << endl;
 
         for(int i = 0; i < nsamples_per_node; i++) {
             vfloat& a_1 = prev_data[i].first;
@@ -328,10 +329,12 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
 
             if(procno % nlayers != nlayers - 1) { // if current layer is NOT the last layer
                 int sendto = procno + 1;
+                // cout << procno << ": IM HERE" << 3%3 << endl;
                 vfloat send_vec(a[i].begin(), a[i].end());
                 send_vec.push_back((float)prev_data[i].second); 
                 send_requests.push_back(MPI_Request());
-                MPI_Isend(send_vec.data(), 
+                // cout << procno << ": ISEND ** size: " << send_vec.size() << " sendto: " << sendto << " tag: " << i << endl; 
+                MPI_Isend(send_vec.data(),
                     (int)send_vec.size(), 
                     MPI_FLOAT, 
                     sendto, 
@@ -345,7 +348,8 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
         vector<pair<vfloat, int> > next_data(nsamples_per_node);
 
         vector<vfloat> delta(nsamples_per_node);
-        // STEP 3: Calculate delta of last layer
+        // STEP 3: Calculate and send delta of last layer
+        cout << procno << ": STEP 3 " << endl;
         if(procno % nlayers == nlayers - 1) {
             assert(batchsize / topology_depth == (int)nsamples_per_node);
             for(int i = 0; i < nsamples_per_node; i++) {
@@ -353,41 +357,63 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
                 minus_y[prev_data[i].second] = -1.;
                 // Backward pass
                 delta[i] = hadamard(D[i], sum(a[i], minus_y));
+                cout << procno << ": delta size " << delta[i].size() << endl;
             }
         }
         // END STEP 3
 
-        // STEP 4: Receive next layer's data and Calculate delta for all but the last layer. Then Send it to the previous layer
+        // STEP 4: Receive next layer's data for all but the last layer and Calculate delta. Then Send it to the previous layer
+        cout << procno << ": STEP 4 " << endl;
         if(procno % nlayers != nlayers - 1) { // if not last layer
             for(int tag = 0; tag < nsamples_per_node; tag++) {
                 vfloat recv_vec(next_layer_size + 1);
                 MPI_Recv(recv_vec.data(), (int)recv_vec.size(), MPI_FLOAT, procno - 1, tag, comm, MPI_STATUS_IGNORE);
+                cout << procno << ": GOT NEXT LAYER DATA " << recv_vec.size() << endl;
                 next_data.push_back(make_pair(recv_vec, *recv_vec.rbegin()));
                 next_data.rbegin()->first.pop_back(); // delete last element (pair.second => label)
             }
-            vector<MPI_Request> send_requests;
+            // vector<MPI_Request> send_requests;
             if(procno % nlayers != 0) { // for all but the first layer
                 for(int i = 0; i < nsamples_per_node; i++) {
                     delta[i] = hadamard(D[i], next_data[i].first);
-                    int sendto = procno - 1;
-                    vfloat send_vec = prod(transpose(layer.first), delta[i]);
-                    send_vec.push_back((float)prev_data[i].second); 
-                    send_requests.push_back(MPI_Request());
-                    MPI_Isend(send_vec.data(), 
-                        (int)send_vec.size(), 
-                        MPI_FLOAT, 
-                        sendto, 
-                        i, // tag: sample number, procno ==> "procno sent me its i-th sample"
-                        comm, &send_requests[send_requests.size() - 1]);
+                    cout << procno << ": GOT NEXT LAYER DATA " << delta[i].size() << endl;
+                    // int sendto = procno - 1;
+                    // vfloat send_vec = prod(transpose(layer.first), delta[i]);
+                    // send_vec.push_back((float)prev_data[i].second); 
+                    // send_requests.push_back(MPI_Request());
+                    // MPI_Isend(send_vec.data(), 
+                    //     (int)send_vec.size(), 
+                    //     MPI_FLOAT, 
+                    //     sendto, 
+                    //     i, // tag: sample number, procno ==> "procno sent me its i-th sample"
+                    //     comm, &send_requests[send_requests.size() - 1]);
                 }
             }
             MPI_Waitall((int)send_requests.size(), send_requests.data(), MPI_STATUSES_IGNORE);
             
         }
+        // STEP 4 1/2 SEND DELTAS
+        vector<MPI_Request> delta_calc_requests;
+        if(procno % nlayers != 0) { // for all but the first layer
+            for(int i = 0; i < nsamples_per_node; i++) {
+                int sendto = procno - 1;
+                vfloat send_vec = prod(transpose(layer.first), delta[i]);
+                send_vec.push_back((float)prev_data[i].second); 
+                delta_calc_requests.push_back(MPI_Request());
+                MPI_Isend(send_vec.data(), 
+                    (int)send_vec.size(), 
+                    MPI_FLOAT, 
+                    sendto, 
+                    i, // tag: sample number, procno ==> "procno sent me its i-th sample"
+                    comm, &delta_calc_requests[delta_calc_requests.size() - 1]);
+            }
+        }
+        MPI_Waitall((int)delta_calc_requests.size(), delta_calc_requests.data(), MPI_STATUSES_IGNORE);
+
         // END STEP 4
 
         // STEP 5: Combine the deltas in each layer
-
+        cout << procno << ": STEP 5 " << endl;
         int wcols = layer.first[0].size();
         int wrows = layer.first.size();
         int wsize = wrows * wcols;
