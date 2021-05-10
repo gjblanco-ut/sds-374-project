@@ -41,7 +41,7 @@ public:
     std::pair<int,int> accuracy(const Dataset& dset, int ifirst, int ilast);
     double costval(const Dataset& dset, int ifirst, int ilast);
     void print() ;
-    void train(const int EPOCHS, const float r, const Dataset& dataset, const int ifirst, const int ilast, int batchsize=100);
+    void train(const int EPOCHS, const float r, const Dataset& dataset, const int ifirst, const int ilast, int batchsize=10);
     std::vector<std::pair<vfloat, int> > evaluate(const Dataset& dset, int ifirst, int ilast);
 };
 
