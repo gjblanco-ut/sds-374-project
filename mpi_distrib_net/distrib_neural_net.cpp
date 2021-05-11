@@ -14,6 +14,7 @@
 #include <mpi.h>
 using namespace std;
 
+const int EVAL_BATCH = 1000;
 
 DistribNeuralNet::DistribNeuralNet(int inlsize, const std::vector<int>& sizes, MPI_Comm& c) {
     comm = c;
@@ -224,12 +225,10 @@ double DistribNeuralNet::costval(const Dataset& dset, int ifirst, int ilast) {
     //cout << procno << ": SEND 777 size: " << W.size() << " sendto: " << sendto << " tag: " << procno << endl;
     // cout << procno << ": RECV 777 size: " << W.size() << " recvfrom: " << procno % nlayers << " tag: " << procno % nlayers << endl;
     assert(ilast > ifirst);
-    const int len = 10;
     double total_norm = 0;
-    for(int k = ifirst; k < ilast; k += len) {
+    for(int k = ifirst; k < ilast; k += EVAL_BATCH) {
         MPI_Barrier(comm);
-        vector<pair<vfloat, int> > a = evaluate(dset, k, min(k + len, ilast));
-        MPI_Barrier(comm);
+        vector<pair<vfloat, int> > a = evaluate(dset, k, min(k + EVAL_BATCH, ilast));
         // cout << "HERE AFTER EVAL" << endl;
         int layer_number = procno % nlayers;
         if(layer_number != 0) continue;
@@ -312,7 +311,7 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
 
         // cout << procno << ": Training started " << procno << endl;
 
-        if(epoch % 1000 == 0) {
+        if(epoch % 10000 == 0) {
             double cost = costval(dataset, ifirst, ilast);
             if(procno == 0) {
                 cout << "Cost: " << cost << endl;
