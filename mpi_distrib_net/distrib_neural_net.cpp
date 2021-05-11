@@ -273,6 +273,7 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
     // cout << procno << ": ISEND size: " << sendvec.size() << " sendto: " << sendto << " tag: " << 0 << endl; 
     // cout << procno << ": RECV size: " << buf.size() << " recvfrom: " << (procno % nlayers) << " tag: " << 0 << endl;
 
+    // send arguments to other processes
     if(procno == 0) {
         int args[2] = {ifirst, ilast};
         for(int i = 1; i < nprocs; i++)
@@ -336,7 +337,7 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
                     vfloat send_vec(x.first.begin(), x.first.end());
                     send_vec.push_back((float)x.second); 
                     send_requests.push_back(MPI_Request());
-                    // cout << procno << ": ISEND 1 size: " << send_vec.size() << " sendto: " << sendto << " tag: " << i / topology_depth << endl; 
+                    // if(procno == 5) cout << procno << ": ISEND 1 size: " << send_vec.size() << " sendto: " << sendto << " tag: " << i / topology_depth << endl; 
                     
                     MPI_Isend(send_vec.data(), 
                         (int)send_vec.size(), 
@@ -349,11 +350,12 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
             MPI_Waitall((int)send_requests.size(), send_requests.data(), MPI_STATUSES_IGNORE);
             // cout << procno << ": SENT ALL" << endl;
         }
+        // if(procno == 5) cout << procno << ": ISEND 1 size: " << endl;
         const int nsamples_per_node = batchsize / topology_depth;
         // Everyone else receives the a^{[l-1]} data (although nodes in layers l+1 receive it later)
         if(procno != 0) {
             // procno nlayers+1 receives 1, 1 + topology_depth, 1 + 2*topology_depth, ... , etc
-            for(int tag = 0; tag < batchsize / topology_depth; tag++) {
+            for(int tag = 0; tag < nsamples_per_node; tag++) {
                 vfloat recv_vec(current_layer_size + 1);
                 // cout << procno << ": RECV 1 size: " << recv_vec.size() << " recvfrom: " << (layer_number == 0? 0 : procno - 1) << " tag: " << tag << "layer number:" << layer_number << endl;
                 MPI_Recv(recv_vec.data(), 
@@ -370,7 +372,7 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
         }
         // END STEP 1
         //cout << procno << ": STEP 2" << endl;
-
+        // if(procno == 5) cout << procno << ": STEP 2: " << endl;
         // STEP 2: Calculate z, a, D (first loop in pdf pseudocode) and Send "a" to next layer mpi procs
         vector<vfloat> z(nsamples_per_node); // one z vector per sample in batch portion
         vector<vfloat> a(nsamples_per_node);
@@ -406,6 +408,7 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
         vector<pair<vfloat, int> > next_data(nsamples_per_node);
 
         vector<vfloat> delta(nsamples_per_node);
+        // if(procno == 5) cout << procno << ": STEP 3: " << endl;
         // STEP 3: Calculate and send delta of last layer
         //cout << procno << ": STEP 3 " << endl;
         if(procno % nlayers == nlayers - 1) {
@@ -419,7 +422,7 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
             }
         }
         // END STEP 3
-
+        // if(procno == 5) cout << procno << ": STEP 4: " << endl;
         // STEP 4: Receive next layer's data for all but the last layer and Calculate delta. Then Send it to the previous layer
         //cout << procno << ": STEP 4 " << endl;
         if(procno % nlayers != nlayers - 1) { // if not last layer
@@ -431,7 +434,7 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
                 // cout << procno << ": GOT NEXT LAYER DATA " << recv_vec.size() << endl;
                 next_data[tag] = make_pair(recv_vec, *recv_vec.rbegin());
                 next_data[tag].first.pop_back(); // delete last element (pair.second => label)
-                assert(next_data[tag].first.size() > 0);
+                assert(next_data[tag].first.size() == next_layer_size);
                 // cout << procno << ": NEXT DATA SIZE " << next_data.rbegin()->first.size() << ", how many => " << next_data.size() << "TAG " << tag << endl;
             }
             // vector<MPI_Request> send_requests;
@@ -444,7 +447,7 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
             // }
         }
         // cout << procno << ":BEFORE" << endl;
-        // STEP 4 1/2 SEND DELTAS
+        // STEP 4 1/2 SEND DELTAS TO PREVIOUS LAYER
         vector<MPI_Request> delta_calc_requests;
         if(procno % nlayers != 0) { // for all but the first layer
             for(int i = 0; i < nsamples_per_node; i++) {
@@ -466,6 +469,7 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
         MPI_Waitall((int)delta_calc_requests.size(), delta_calc_requests.data(), MPI_STATUSES_IGNORE);
 
         // END STEP 4
+        // if(procno == 5) cout << procno << ": STEP 5: " << endl;
 
         // STEP 5: Combine the deltas in each layer
         //cout << procno << ": STEP 5 " << endl;
@@ -474,18 +478,25 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
         int wsize = wrows * wcols;
         vfloat W(wsize + wrows, 0.);
 
+        // for each b vector: b[j] -= delta[i][j] / batchsize;
+        // for each W matrix: W[j][k] -= r*delta[j] * prev_data[i].first[k] / batchsize; where prevdata[i].first[k] is a^[l-1] [k] for the ith sample
         if(procno % nlayers == procno) { // if this node is the first in the layer
-            
+
+
+            // vector<float> deltaW(wsize, 0);
             //cout << procno << ": SOME DATA " << wrows << " " << wcols << " " << nsamples_per_node << " disize " << delta[0].size() << endl;
             // update weights and biases matrix
             // #pragma omp parallel for
             for(int i = 0; i < nsamples_per_node; i++) {
                 for(int j = 0; j < wrows; j++) {
                     assert(layer.second.size() == delta[i].size());
-                    layer.second[j] += delta[i][j] / batchsize;
+                    // layer.second[j] += delta[i][j] / batchsize;
+                    layer.second[j] -= delta[i][j] / batchsize;
                     for(int k = 0; k < wcols; k++) {
                         assert(layer.first[j].size() == prev_data[i].first.size());
-                        layer.first[j][k] += r * delta[i][j] * prev_data[i].first[k] / batchsize;
+                        // layer.first[j][k] += r * delta[i][j] * prev_data[i].first[k] / batchsize;
+                        layer.first[j][k] -= r * delta[i][j] * prev_data[i].first[k] / batchsize;
+                        // deltaW[j * wcols + k] += r * delta[i][j] * prev_data[i].first[k] / batchsize;
                     }
                 }
             }
@@ -493,15 +504,18 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
             // W: delta avgs (W is the product r * delta[l]a[l-1] in the other nodes)
             // receive other vector's delta W and delta b and update
             for(int tag = 1, sendto = procno + nlayers; sendto < nprocs; sendto += nlayers, tag++) { // tag is the order of the coworker node
-                // cout << procno << ": RECV size: " << W.size() << " recvfrom: " << sendto << " tag: " << tag << endl;
+                // cout << procno << ": RECV size: " << W.size() << " recvfrom: " << sendto << " tag: " << tag << "epoch " << epoch << endl;
                 MPI_Recv(W.data(), (int)W.size(), MPI_FLOAT, sendto, tag, comm, MPI_STATUS_IGNORE);
                 // cout << procno << ": Received all deltas complete" << endl;
                 #pragma omp parallel for
                 for(int i = 0; i < nsamples_per_node; i++) {
                     for(int j = 0; j < wrows; j++) {
-                        layer.second[j] += W[wsize + j];
+                        // layer.second[j] += W[wsize + j];
+                        layer.second[j] -= W[wsize + j];
                         for(int k = 0; k < wcols; k++) {
-                            layer.first[j][k] += W[i * wrows + j];
+                            // layer.first[j][k] += W[j * wcols + k];
+                            layer.first[j][k] -= W[j * wcols + k];
+                            // deltaW[j * wcols + k] += W[j * wcols + k];
                         }
                     }
                 }
@@ -510,10 +524,13 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
             // sync layer with coworkers
             for(int i = 0; i < (int)layer.first.size(); i++) {
                 assert(W.size() - wsize == layer.second.size());
+                assert(wsize + i < W.size());
+                assert(i < layer.second.size());
                 W[wsize + i] = layer.second[i];
                 for(int j = 0; j < (int)layer.first[i].size(); j++) {
                     // cout << "WCOLS " << wcols << " layer.first[" << i << "].size() " << layer.first[i].size() << endl;
                     assert(layer.first[i].size() == wcols);
+                    assert(i * wcols + j < W.size());
                     W[i * wcols + j] = layer.first[i][j];
                 }
             }
@@ -523,36 +540,60 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
                 MPI_Send(W.data(), W.size(), MPI_FLOAT, sendto, procno, comm);
             }
             //cout << procno << ": ADFASDFASFASF 3" << endl;
+            // cout << procno << ": WMATRIX";
+            // for(int i = 0; i < wrows; i++) {
+            //     cout << endl;
+            //     for(int j = 0; j < wcols; j++) {
+            //         cout << deltaW[i * wcols + j] << " ";
+            //     }
+            // }
             
-        } else {
+        } else { // LAST LINE I DEBUGGED
+            // if(procno == 5) cout << procno << ": STEP 6: " << endl;
             // send delta w and delta bias data
-            #pragma omp parallel for
+            // #pragma omp parallel for
             for(int i = 0; i < nsamples_per_node; i++) {
+                // if(procno == 5) cout << procno << ": STEP 6z: " << endl;
                 for(int j = 0; j < wrows; j++) {
                     W[wsize + j] += delta[i][j] / batchsize;
                     for(int k = 0; k < wcols; k++) {
-                        W[j * wrows + k] += r * delta[i][j] * prev_data[i].first[k] / batchsize;
+                        assert(i < delta.size());
+                        assert(j < delta[i].size());
+                        assert(j * wcols + k < W.size());
+                        assert(i < prev_data.size());
+                        assert(k < prev_data[i].first.size());
+                        W[j * wcols + k] += r * delta[i][j] * prev_data[i].first[k] / batchsize;
                     }
                 }
             }
+            // if(procno == 5) cout << procno << ": STEP 6b: " << W.size() << endl;
             // send W and b to zero
             //cout << procno << ": ISEND ** size: " << W.size() << " sendto: " << procno % nlayers << " tag: " << procno / nlayers << endl; 
+            // if(procno == 5) 
+            // cout << procno << ": SEND " << "size " << W.size() << " to " << procno % nlayers << " tag " << procno / nlayers << " epoch " << epoch << endl;
             MPI_Send(W.data(), W.size(), MPI_FLOAT, procno % nlayers, procno / nlayers, comm);
+            // if(procno == 5) cout << procno << ": SENT: " << wsize + wrows << endl;
 
             //cout << procno << ": FINAL SEND SENT" << endl;
 
             // receive layer matrix and bias. Update
-           // cout << procno << ": RECV 777 size: " << W.size() << " recvfrom: " << procno % nlayers << " tag: " << procno % nlayers << endl;
-            MPI_Recv(W.data(), (int)W.size(), MPI_FLOAT, procno % nlayers, procno % nlayers, comm, MPI_STATUS_IGNORE);
-            //cout << procno << ": AFTER RECV" << endl;
+            // if(procno == 5) 
+            vfloat W2(wsize + wrows);
+            // cout << procno << ": RECV 777 size: " << W2.size() << " recvfrom: " << procno % nlayers << " tag: " << procno % nlayers << endl;
+            MPI_Recv(W2.data(), (int)W2.size(), MPI_FLOAT, procno % nlayers, procno % nlayers, comm, MPI_STATUS_IGNORE);
+            // if(procno == 5) cout << procno << ": AFTER RECV" << endl;
 
             for(int i = 0; i < (int)layer.first.size(); i++) {
-                layer.second[i] = W[wsize + i];
+                assert(layer.second.size() == layer.first.size());
+                assert(W2.size() > wsize + i);
+                layer.second[i] = W2[wsize + i];
                 for(int j = 0; j < (int)layer.first[i].size(); j++) {
-                    layer.first[i][j] = W[i * wcols + j];
+                    assert(i * wcols + j < W2.size());
+                    layer.first[i][j] = W2[i * wcols + j];
                 }
             }
         }
+        // if(procno == 5) cout << procno << ": BARRIER: " << endl;
         MPI_Barrier(comm);
     }
 }
