@@ -84,7 +84,7 @@ vfloat NeuralNet::evaluate_net(const vfloat& input) {
 
 pair<int,int> NeuralNet::accuracy(const Dataset& dset, int ifirst, int ilast) {
     if(ilast < 0) ilast = (int)dset.size();
-    int ncorrect = 0, nincorrect = 0;
+    int ncorrect = 0;
     for(int i = ifirst; i < ilast; i++) {
         pair<vfloat, int> dat = dset[i];
         vfloat a = evaluate_net(dat.first);
@@ -94,11 +94,9 @@ pair<int,int> NeuralNet::accuracy(const Dataset& dset, int ifirst, int ilast) {
         }
         if(best.second == dat.second) {
             ncorrect++;
-        } else {
-            nincorrect++;
         }
     }
-    return make_pair(ncorrect, nincorrect);
+    return make_pair(ncorrect, ilast - ifirst - ncorrect);
 }
 
 

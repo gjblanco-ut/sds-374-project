@@ -34,7 +34,7 @@ public:
     void update_net_B(int l, float r, const vfloat& d);
     vfloat evaluate_net(const vfloat& input);
 
-    std::pair<int,int> accuracy(const Dataset& dset, const std::pair<int,int>& prev_acc, int ifirst = 0, int ilast = -1);
+    std::pair<int,int> accuracy(const Dataset& dset, int ifirst = 0, int ilast = -1);
     double costval(const Dataset& dset, int ifirst = 0, int ilast = -1);
     void print() ;
 

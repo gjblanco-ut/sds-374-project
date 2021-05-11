@@ -84,12 +84,10 @@ vfloat NeuralNet::evaluate_net(const vfloat& input) {
     return a;
 }
 
-pair<int,int> NeuralNet::accuracy(const Dataset& dset, const std::pair<int,int>& previous_accuracy, int ifirst, int ilast) {
+pair<int,int> NeuralNet::accuracy(const Dataset& dset, int ifirst, int ilast) {
     if(ilast < 0) ilast = (int)dset.size();
-    int ncorrect = 0, nincorrect = 0;
-    bool report_correct = previous_accuracy.first < previous_accuracy.second;
-    cout << "Counting " << (report_correct? " Correct ones" : "Incorrect ones") << endl;
-    #pragma omp parallel for
+    int ncorrect = 0;
+    #pragma omp parallel for reduction (+: ncorrect)
     for(int i = ifirst; i < ilast; i++) {
         pair<vfloat, int> dat = dset[i];
         vfloat a = evaluate_net(dat.first);
@@ -97,16 +95,11 @@ pair<int,int> NeuralNet::accuracy(const Dataset& dset, const std::pair<int,int>&
         for(int label = 1; label < output_layer_size; label++) {
             best = max(make_pair(a[label], label), best);
         }
-        if(best.second == dat.second && report_correct) { // use the last reported to determine which is more likely to cause less slowdown
-            #pragma omp atomic
+        if(best.second == dat.second) { // use the last reported to determine which is more likely to cause less slowdown
             ncorrect++;
-        } else if (best.second != dat.second && !report_correct){
-            #pragma omp atomic
-            nincorrect++;
         }
     }
-    return make_pair(report_correct? ncorrect               : ilast - ifirst - nincorrect, 
-                    report_correct? ilast-ifirst - ncorrect : nincorrect );
+    return make_pair(ncorrect, ilast-ifirst - ncorrect);
 }
 
 
@@ -197,10 +190,10 @@ void NeuralNet::train(const int EPOCHS, const float r, const Dataset& dataset, c
         //     cout << "End of epoch " << i << endl;
         if(i % 50000 == 0) {
             cout << "Calculating accuracy" << endl;
-            pair<int,int> acc = accuracy(dataset, previous_accuracy, 0, ntrain);
+            pair<int,int> acc = accuracy(dataset, 0, ntrain);
             previous_accuracy = acc;
             cout << "Accuracy on training data: " << (acc.first * 1. / (acc.first + acc.second)) << endl;
-            acc = accuracy(dataset, previous_accuracy, ntrain);
+            acc = accuracy(dataset, ntrain);
             cout << "Accuracy on leftover data: " << (acc.first * 1. / (acc.first + acc.second)) << endl;
         }
         if(i % 50000 == 0) {
