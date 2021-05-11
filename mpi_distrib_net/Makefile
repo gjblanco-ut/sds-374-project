@@ -28,7 +28,7 @@ CXX = mpicxx
 # 	rm -f *.o $(TARGET)
 # set non-optional compiler flags here
 
-CXXFLAGS += -std=c++11 -Wall -g
+CXXFLAGS += -std=c++11 -Wall -fopenmp -O2 -xhost
 
 # set non-optional preprocessor flags here
 # eg. project specific include directories
