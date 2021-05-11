@@ -31,6 +31,9 @@ private:
     int nprocs;
     MPI_Comm comm;
 
+    std::pair<double, int> eval_times;
+    std::pair<double, int> cost_fn_times;
+    std::pair<double, int> epoch_times;
 public:
     DistribNeuralNet(int inlsize, const std::vector<int>& sizes, MPI_Comm& c);
     void update_W(float r, const vfloat& d, const vfloat& a);
@@ -41,7 +44,7 @@ public:
     std::pair<int,int> accuracy(const Dataset& dset, int ifirst, int ilast);
     double costval(const Dataset& dset, int ifirst, int ilast);
     void print() ;
-    void train(const int EPOCHS, const float r, const Dataset& dataset, const int ifirst, const int ilast, int batchsize=10);
+    void train(const int EPOCHS, const float r, const Dataset& dataset, const int ifirst, const int ilast, int batchsize=100);
     std::vector<std::pair<vfloat, int> > evaluate(const Dataset& dset, int ifirst, int ilast);
 };
 

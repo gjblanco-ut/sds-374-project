@@ -10,14 +10,23 @@
 #include <random>
 #include <cmath>
 #include <cassert>
+#include <chrono>
+
+using std::chrono::high_resolution_clock;
+using std::chrono::duration_cast;
+using std::chrono::duration;
+using std::chrono::milliseconds;
 
 #include <mpi.h>
 using namespace std;
 
 const int EVAL_BATCH = 1000;
 
-DistribNeuralNet::DistribNeuralNet(int inlsize, const std::vector<int>& sizes, MPI_Comm& c) {
-    comm = c;
+DistribNeuralNet::DistribNeuralNet(int inlsize, const std::vector<int>& sizes, MPI_Comm& c)
+    : comm(c)
+    , eval_times(0., 0)
+    , cost_fn_times(0., 0)
+    , epoch_times(0., 0) {
     nlayers = (int)sizes.size();
     MPI_Comm_size(comm, &nprocs);
     MPI_Comm_rank(comm, &procno);
@@ -198,7 +207,15 @@ double DistribNeuralNet::costval(const Dataset& dset, int ifirst, int ilast) {
     double total_norm = 0;
     for(int k = ifirst; k < ilast; k += EVAL_BATCH) {
         MPI_Barrier(comm);
+        auto t1 = high_resolution_clock::now();
         vector<pair<vfloat, int> > a = evaluate(dset, k, min(k + EVAL_BATCH, ilast));
+        MPI_Barrier(comm); // to measure time
+        if(procno == 0) {
+            auto t2 = high_resolution_clock::now();
+            eval_times.first += duration_cast<milliseconds>(t2 - t1).count();
+            eval_times.second += min(k + EVAL_BATCH, ilast) - k;
+        }
+        
         // cout << "HERE AFTER EVAL" << endl;
         int layer_number = procno % nlayers;
         if(layer_number != 0) continue;
@@ -262,6 +279,10 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
         if(procno == 0) {
             cout << "Chose new batch size: " << batchsize << "." << endl;
         }
+    } else {
+        if(procno == 0) {
+            cout << "Batch size: " << batchsize << "." << endl;
+        }
     }
 
     int layer_number = procno % nlayers;
@@ -274,12 +295,21 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
     // ...
 
     for(int epoch = 0; epoch < EPOCHS; epoch++) {
-        if(epoch % 10000 == 0) {
+        if(epoch % 1000 == 0) {
+            auto tc1 = high_resolution_clock::now();
             double cost = costval(dataset, ifirst, ilast);
             if(procno == 0) {
                 cout << "Cost: " << cost << endl;
+                auto tc2 = high_resolution_clock::now();
+                cost_fn_times.first += duration_cast<milliseconds>(tc2 - tc1).count();
+                cost_fn_times.second++;
             }
         }
+        if(epoch % 100 == 0 && procno == 0) {
+            cout << "EPOCH " << epoch << endl;
+        }
+
+        auto te1 = high_resolution_clock::now();
         
         if(procno == 0 && epoch % 1000 == 0)
             cout << "EPOCH " << epoch << endl;
@@ -421,10 +451,8 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
             #pragma omp parallel for
             for(int i = 0; i < nsamples_per_node; i++) {
                 for(int j = 0; j < wrows; j++) {
-                    assert(layer.second.size() == delta[i].size());
                     layer.second[j] -= delta[i][j] / batchsize;
                     for(int k = 0; k < wcols; k++) {
-                        assert(layer.first[j].size() == prev_data[i].first.size());
                         layer.first[j][k] -= r * delta[i][j] * prev_data[i].first[k] / batchsize;
                     }
                 }
@@ -448,13 +476,8 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
             }
             // sync layer with coworkers
             for(int i = 0; i < (int)layer.first.size(); i++) {
-                assert(W.size() - wsize == layer.second.size());
-                assert(wsize + i < W.size());
-                assert(i < layer.second.size());
                 W[wsize + i] = layer.second[i];
                 for(int j = 0; j < (int)layer.first[i].size(); j++) {
-                    assert(layer.first[i].size() == wcols);
-                    assert(i * wcols + j < W.size());
                     W[i * wcols + j] = layer.first[i][j];
                 }
             }
@@ -469,11 +492,6 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
                 for(int j = 0; j < wrows; j++) {
                     W[wsize + j] += delta[i][j] / batchsize;
                     for(int k = 0; k < wcols; k++) {
-                        assert(i < delta.size());
-                        assert(j < delta[i].size());
-                        assert(j * wcols + k < W.size());
-                        assert(i < prev_data.size());
-                        assert(k < prev_data[i].first.size());
                         W[j * wcols + k] += r * delta[i][j] * prev_data[i].first[k] / batchsize;
                     }
                 }
@@ -486,15 +504,23 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
             MPI_Recv(W2.data(), (int)W2.size(), MPI_FLOAT, procno % nlayers, procno % nlayers, comm, MPI_STATUS_IGNORE);
 
             for(int i = 0; i < (int)layer.first.size(); i++) {
-                assert(layer.second.size() == layer.first.size());
-                assert(W2.size() > wsize + i);
                 layer.second[i] = W2[wsize + i];
                 for(int j = 0; j < (int)layer.first[i].size(); j++) {
-                    assert(i * wcols + j < W2.size());
                     layer.first[i][j] = W2[i * wcols + j];
                 }
             }
         }
         MPI_Barrier(comm);
+        if(procno == 0) {
+            auto te2 = high_resolution_clock::now();
+            epoch_times.first += duration_cast<milliseconds>(te2 - te1).count();
+            epoch_times.second++;
+        }
+        if(epoch % 10 == 0 && procno == 0) {
+            cout << ":::::Timing:::::\n";
+            cout << "Average time per evaluation ::: " << eval_times.first / eval_times.second / 1000. << " (sec) over " << eval_times.second  << " times.\n";
+            cout << "Average time per epoch ::: " << epoch_times.first / epoch_times.second / 1000. << " (sec) over " << epoch_times.second << " times.\n";
+            cout << "Average time for cost function evaluation ::: " << cost_fn_times.first / cost_fn_times.second / 1000. << " (sec) over " << cost_fn_times.second << " times.\n";
+        }
     }
 }

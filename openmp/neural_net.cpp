@@ -11,13 +11,22 @@
 #include <random>
 #include <cmath>
 #include <cassert>
+#include <chrono>
+
+using std::chrono::high_resolution_clock;
+using std::chrono::duration_cast;
+using std::chrono::duration;
+using std::chrono::milliseconds;
 
 using namespace std;
 
 NeuralNet::NeuralNet(int inlsize, const vector<int>& sizes, int outlsize)
     : input_layer_size(inlsize)
     , layers(sizes.size() + 2)
-    , output_layer_size(outlsize) {
+    , output_layer_size(outlsize)
+    , eval_times(0., 0)
+    , cost_fn_times(0., 0)
+    , epoch_times(0., 0) {
 
     layers[0] = Layer(Matrix(0), vfloat(0)); // first layer. 
     std::default_random_engine generator;
@@ -63,11 +72,15 @@ void NeuralNet::update_net_B(int l, float r, const vfloat& d) {
 
 // typedef vector<pair<Matrix, vfloat > > NeuralNet;
 vfloat NeuralNet::evaluate_net(const vfloat& input) {
+    auto t1 = high_resolution_clock::now();
     vfloat a = input; // copy input
     for(int i = 1; i < (int)layers.size(); i++) {
         Layer layer = layers[i];
         a = sigmoid(sum(prod(layer.first, a), layer.second));
     }
+    auto t2 = high_resolution_clock::now();
+    eval_times.first += duration_cast<milliseconds>(t2 - t1).count();
+    eval_times.second++;
     return a;
 }
 
@@ -98,8 +111,10 @@ pair<int,int> NeuralNet::accuracy(const Dataset& dset, const std::pair<int,int>&
 
 
 double NeuralNet::costval(const Dataset& dset, int ifirst, int ilast) {
+    auto tc1 = high_resolution_clock::now();
     if(ilast < 0) ilast = (int)dset.size();
     double norm2 = 0;
+    #pragma omp parallel for
     for(int i = ifirst; i < ilast; i++) {
         auto dat = dset[i];
         vfloat a = evaluate_net(dat.first);
@@ -111,6 +126,9 @@ double NeuralNet::costval(const Dataset& dset, int ifirst, int ilast) {
         }
         norm2 += norm;
     }
+    auto tc2 = high_resolution_clock::now();
+    cost_fn_times.first += duration_cast<milliseconds>(tc2 - tc1).count();
+    cost_fn_times.second++;
     return norm2;
 }
 
@@ -142,6 +160,7 @@ void NeuralNet::train(const int EPOCHS, const float r, const Dataset& dataset, c
     pair<int,int> previous_accuracy(0,1);
     for(int i = 0; i < EPOCHS; i++) {
         if(i % 10000 == 0) cout << "EPOCH " << i << endl;
+        auto te1 = high_resolution_clock::now();
         int k = distrib(gen);
 
         auto& x = dataset[k];
@@ -170,6 +189,10 @@ void NeuralNet::train(const int EPOCHS, const float r, const Dataset& dataset, c
             update_net_W(l, r, delta[l], a[l - 1]);
             update_net_B(l, r, delta[l]);
         }
+
+        auto te2 = high_resolution_clock::now();
+        epoch_times.first += duration_cast<milliseconds>(te2 - te1).count();
+        epoch_times.second++;
         // if(i % 20 == 0)
         //     cout << "End of epoch " << i << endl;
         if(i % 50000 == 0) {
@@ -184,6 +207,12 @@ void NeuralNet::train(const int EPOCHS, const float r, const Dataset& dataset, c
             cout << "Calculating cost" << endl;
             double cost = costval(dataset, 0, ntrain);
             cout << cost << endl;
+        }
+        if(i % 10000 == 0) {
+            cout << ":::::Timing:::::\n";
+            cout << "Average time per evaluation ::: " << eval_times.first / eval_times.second / 1000. << " (sec) over " << eval_times.second << " times.\n";
+            cout << "Average time per epoch ::: "<< epoch_times.first / epoch_times.second / 1000. << " (sec) over " << epoch_times.second << " times.\n";
+            cout << "Average time for cost function evaluation ::: " << cost_fn_times.first / cost_fn_times.second / 1000. << " (sec) over " << cost_fn_times.second << " times.\n";
         }
         // if(i % 1000000 == 0) {
         //     print(net);
