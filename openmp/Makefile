@@ -28,7 +28,7 @@ CXX = g++
 # 	rm -f *.o $(TARGET)
 # set non-optional compiler flags here
 
-CXXFLAGS += -std=c++11 -Wall -Wextra -pedantic-errors -fopenmp
+CXXFLAGS += -std=c++11 -Wall -Wextra -fopenmp -O2 -xhost
 
 # set non-optional preprocessor flags here
 # eg. project specific include directories
