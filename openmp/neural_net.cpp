@@ -112,7 +112,7 @@ double NeuralNet::costval(const Dataset& dset, int ifirst, int ilast) {
     if(ilast < 0) ilast = (int)dset.size();
     double norm2 = 0;
     double eval_time = 0;
-    #pragma omp parallel for reduction(+: norm, eval_time)
+    #pragma omp parallel for reduction(+: norm2, eval_time)
     for(int i = ifirst; i < ilast; i++) {
         auto dat = dset[i];
         auto t1 = high_resolution_clock::now();
