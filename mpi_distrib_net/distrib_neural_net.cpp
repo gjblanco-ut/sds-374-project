@@ -294,6 +294,8 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
     // pN   pN+1 pN+2 ... p2N
     // ...
 
+    auto te1 = high_resolution_clock::now();
+    cout << "Data set size: " << dataset.size() << endl;
     for(int epoch = 0; epoch < EPOCHS; epoch++) {
         if(epoch % 1000 == 0) {
             auto tc1 = high_resolution_clock::now();
@@ -308,8 +310,6 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
         if(epoch % 100 == 0 && procno == 0) {
             cout << "EPOCH " << epoch << endl;
         }
-
-        auto te1 = high_resolution_clock::now();
         
         if(procno == 0 && epoch % 1000 == 0)
             cout << "EPOCH " << epoch << endl;
@@ -410,7 +410,6 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
                 MPI_Recv(recv_vec.data(), (int)recv_vec.size(), MPI_FLOAT, procno + 1, tag, comm, MPI_STATUS_IGNORE);
                 next_data[tag] = make_pair(recv_vec, *recv_vec.rbegin());
                 next_data[tag].first.pop_back(); // delete last element (pair.second => label)
-                assert(next_data[tag].first.size() == next_layer_size);
             }
             for(int i = 0; i < nsamples_per_node; i++) {
                 delta[i] = hadamard(D[i], next_data[i].first);
@@ -511,15 +510,17 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
             }
         }
         MPI_Barrier(comm);
-        if(procno == 0) {
+        if(procno == 0 && epoch % (dataset.size() / batchsize) == 0 
+        && epoch_times.second > 0 && eval_times.second > 0 && cost_fn_times.second > 0) {
             auto te2 = high_resolution_clock::now();
             epoch_times.first += duration_cast<milliseconds>(te2 - te1).count();
             epoch_times.second++;
+            te1 = high_resolution_clock::now();
         }
-        if(epoch % 10 == 0 && procno == 0) {
+        if(procno == 0 && epoch % (dataset.size() / batchsize) == 0 && epoch_times.second > 0) {
             cout.precision(15);
             cout << ":::::Timing:::::\n";
-            cout << "Average time per evaluation ::: " << eval_times.first / eval_times.second << " (msec) over " << eval_times.second  << " times.\n";
+            cout << "Average time per 100K evaluation ::: " << eval_times.first * 100000 / eval_times.second << " (msec) over " << eval_times.second  << " times.\n";
             cout << "Average time per epoch ::: " << epoch_times.first / epoch_times.second << " (msec) over " << epoch_times.second << " times.\n";
             cout << "Average time for cost function evaluation ::: " << cost_fn_times.first << " (msec) over " << cost_fn_times.second << " times.\n";
         }

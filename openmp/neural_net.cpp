@@ -151,9 +151,17 @@ void NeuralNet::train(const int EPOCHS, const float r, const Dataset& dataset, c
 
     const int L = (int)layers.size();
     pair<int,int> previous_accuracy(0,1);
-    for(int i = 0; i < EPOCH; i++) {
-        if(i % 10000 == 0) cout << "EPOCH " << i << endl;
-        auto te1 = high_resolution_clock::now();
+    auto te1 = high_resolution_clock::now();
+    cout << "Data set size: " << dataset.size() << endl;
+    for(int i = 0; i < EPOCHS; i++) {
+        
+        if(i % (int)dataset.size() == 0 && i > 0) {
+            cout << "EPOCH " << i << endl;
+            auto te2 = high_resolution_clock::now();
+            epoch_times.first += duration_cast<milliseconds>(te2 - te1).count();
+            epoch_times.second++;
+            te1 = high_resolution_clock::now();
+        }
         int k = distrib(gen);
 
         auto& x = dataset[k];
@@ -183,9 +191,6 @@ void NeuralNet::train(const int EPOCHS, const float r, const Dataset& dataset, c
             update_net_B(l, r, delta[l]);
         }
 
-        auto te2 = high_resolution_clock::now();
-        epoch_times.first += duration_cast<milliseconds>(te2 - te1).count();
-        epoch_times.second++;
         // if(i % 20 == 0)
         //     cout << "End of epoch " << i << endl;
         if(i % 50000 == 0) {
@@ -201,10 +206,10 @@ void NeuralNet::train(const int EPOCHS, const float r, const Dataset& dataset, c
             double cost = costval(dataset, 0, ntrain);
             cout << cost << endl;
         }
-        if(i % 10000 == 0) {
+        if(i % 10000 == 0 && epoch_times.second > 0 && eval_times.second > 0 && cost_fn_times.second > 0) {
             cout.precision(15);
             cout << ":::::Timing:::::\n";
-            cout << "Average time per evaluation ::: " << eval_times.first / eval_times.second << " (msec) over " << eval_times.second << " times.\n";
+            cout << "Average time per 100K evaluation ::: " << eval_times.first * 100000 / eval_times.second << " (msec) over " << eval_times.second << " times.\n";
             cout << "Average time per epoch ::: "<< epoch_times.first / epoch_times.second << " (msec) over " << epoch_times.second << " times.\n";
             cout << "Average time for cost function evaluation ::: " << cost_fn_times.first / cost_fn_times.second << " (msec) over " << cost_fn_times.second << " times.\n";
         }
