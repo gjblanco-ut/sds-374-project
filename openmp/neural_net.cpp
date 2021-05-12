@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cassert>
 #include <chrono>
+#include <omp.h>
 
 using std::chrono::high_resolution_clock;
 using std::chrono::duration_cast;
@@ -83,11 +84,14 @@ vfloat NeuralNet::evaluate_net(const vfloat& input) {
 pair<int,int> NeuralNet::accuracy(const Dataset& dset, int ifirst, int ilast) {
     if(ilast < 0) ilast = (int)dset.size();
     int ncorrect = 0;
-    auto t1 = high_resolution_clock::now();
+    double eval_time = 0;
     #pragma omp parallel for reduction (+: ncorrect)
     for(int i = ifirst; i < ilast; i++) {
         pair<vfloat, int> dat = dset[i];
+        auto t1 = high_resolution_clock::now();
         vfloat a = evaluate_net(dat.first);
+        auto t2 = high_resolution_clock::now();
+        eval_time += duration_cast<milliseconds>(t2 - t1).count();
         pair<float, int> best = make_pair(a[0], 0);
         for(int label = 1; label < output_layer_size; label++) {
             best = max(make_pair(a[label], label), best);
@@ -96,9 +100,9 @@ pair<int,int> NeuralNet::accuracy(const Dataset& dset, int ifirst, int ilast) {
             ncorrect++;
         }
     }
-    auto t2 = high_resolution_clock::now();
-    eval_times.first += duration_cast<milliseconds>(t2 - t1).count();
-    eval_times.second+= ilast - ifirst;
+    
+    eval_times.first += eval_time / (ilast - ifirst);
+    eval_times.second += ilast - ifirst;
     return make_pair(ncorrect, ilast-ifirst - ncorrect);
 }
 
@@ -107,11 +111,14 @@ double NeuralNet::costval(const Dataset& dset, int ifirst, int ilast) {
     auto tc1 = high_resolution_clock::now();
     if(ilast < 0) ilast = (int)dset.size();
     double norm2 = 0;
-    auto t1 = high_resolution_clock::now();
-    #pragma omp parallel for
+    double eval_time = 0;
+    #pragma omp parallel for reduction(+: norm, eval_time)
     for(int i = ifirst; i < ilast; i++) {
         auto dat = dset[i];
+        auto t1 = high_resolution_clock::now();
         vfloat a = evaluate_net(dat.first);
+        auto t2 = high_resolution_clock::now();
+        eval_time += duration_cast<milliseconds>(t2 - t1).count();
         vfloat y(output_layer_size, 0);
         y[dat.second] = 1;
         double norm = 0;
@@ -120,9 +127,9 @@ double NeuralNet::costval(const Dataset& dset, int ifirst, int ilast) {
         }
         norm2 += norm;
     }
-    auto t2 = high_resolution_clock::now();
-    eval_times.first += duration_cast<milliseconds>(t2 - t1).count();
+    eval_times.first += eval_time / (ilast - ifirst); // take the avg per iteration.
     eval_times.second += ilast - ifirst;
+    
 
     auto tc2 = high_resolution_clock::now();
     cost_fn_times.first += duration_cast<milliseconds>(tc2 - tc1).count();
@@ -179,7 +186,7 @@ void NeuralNet::train(const int EPOCHS, const float r, const Dataset& dataset, c
         for(int l = 1; l < L; l++) {
             Layer& layer = layers[l];
             vfloat z = sum(prod(layer.first, a[l - 1]), layer.second);
-            a[l] = sigmoid(z);
+            a[l] = sigmoid(z); 
             D[l] = dsigmoid(z);
         }
         vector<vfloat> delta(L);

@@ -301,10 +301,10 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
             auto tc1 = high_resolution_clock::now();
             double cost = costval(dataset, ifirst, ilast);
             if(procno == 0) {
-                cout << "Cost: " << cost << endl;
                 auto tc2 = high_resolution_clock::now();
                 cost_fn_times.first += duration_cast<milliseconds>(tc2 - tc1).count();
                 cost_fn_times.second++; 
+                cout << "Cost: " << cost << endl;
             }
         }
         if(epoch % 100 == 0 && procno == 0) {
@@ -510,14 +510,14 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
             }
         }
         MPI_Barrier(comm);
-        if(procno == 0 && epoch % (dataset.size() / batchsize) == 0 
-        && epoch_times.second > 0 && eval_times.second > 0 && cost_fn_times.second > 0) {
+        if(procno == 0 && epoch % (dataset.size() / batchsize) == 0) {
             auto te2 = high_resolution_clock::now();
             epoch_times.first += duration_cast<milliseconds>(te2 - te1).count();
             epoch_times.second++;
             te1 = high_resolution_clock::now();
         }
-        if(procno == 0 && epoch % (dataset.size() / batchsize) == 0 && epoch_times.second > 0) {
+        if(procno == 0 && epoch % (dataset.size() / batchsize) == 0
+        && epoch_times.second > 0 && eval_times.second > 0 && cost_fn_times.second > 0) {
             cout.precision(15);
             cout << ":::::Timing:::::\n";
             cout << "Average time per 100K evaluation ::: " << eval_times.first * 100000 / eval_times.second << " (msec) over " << eval_times.second  << " times.\n";
