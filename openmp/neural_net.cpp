@@ -72,21 +72,18 @@ void NeuralNet::update_net_B(int l, float r, const vfloat& d) {
 
 // typedef vector<pair<Matrix, vfloat > > NeuralNet;
 vfloat NeuralNet::evaluate_net(const vfloat& input) {
-    auto t1 = high_resolution_clock::now();
     vfloat a = input; // copy input
     for(int i = 1; i < (int)layers.size(); i++) {
         Layer layer = layers[i];
         a = sigmoid(sum(prod(layer.first, a), layer.second));
     }
-    auto t2 = high_resolution_clock::now();
-    eval_times.first += duration_cast<milliseconds>(t2 - t1).count();
-    eval_times.second++;
     return a;
 }
 
 pair<int,int> NeuralNet::accuracy(const Dataset& dset, int ifirst, int ilast) {
     if(ilast < 0) ilast = (int)dset.size();
     int ncorrect = 0;
+    auto t1 = high_resolution_clock::now();
     #pragma omp parallel for reduction (+: ncorrect)
     for(int i = ifirst; i < ilast; i++) {
         pair<vfloat, int> dat = dset[i];
@@ -99,6 +96,9 @@ pair<int,int> NeuralNet::accuracy(const Dataset& dset, int ifirst, int ilast) {
             ncorrect++;
         }
     }
+    auto t2 = high_resolution_clock::now();
+    eval_times.first += duration_cast<milliseconds>(t2 - t1).count();
+    eval_times.second+= ilast - ifirst;
     return make_pair(ncorrect, ilast-ifirst - ncorrect);
 }
 
@@ -107,6 +107,7 @@ double NeuralNet::costval(const Dataset& dset, int ifirst, int ilast) {
     auto tc1 = high_resolution_clock::now();
     if(ilast < 0) ilast = (int)dset.size();
     double norm2 = 0;
+    auto t1 = high_resolution_clock::now();
     #pragma omp parallel for
     for(int i = ifirst; i < ilast; i++) {
         auto dat = dset[i];
@@ -119,6 +120,10 @@ double NeuralNet::costval(const Dataset& dset, int ifirst, int ilast) {
         }
         norm2 += norm;
     }
+    auto t2 = high_resolution_clock::now();
+    eval_times.first += duration_cast<milliseconds>(t2 - t1).count();
+    eval_times.second += ilast - ifirst;
+
     auto tc2 = high_resolution_clock::now();
     cost_fn_times.first += duration_cast<milliseconds>(tc2 - tc1).count();
     cost_fn_times.second++;

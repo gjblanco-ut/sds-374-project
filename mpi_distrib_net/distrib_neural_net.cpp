@@ -304,7 +304,7 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
                 cout << "Cost: " << cost << endl;
                 auto tc2 = high_resolution_clock::now();
                 cost_fn_times.first += duration_cast<milliseconds>(tc2 - tc1).count();
-                cost_fn_times.second++;
+                cost_fn_times.second++; 
             }
         }
         if(epoch % 100 == 0 && procno == 0) {

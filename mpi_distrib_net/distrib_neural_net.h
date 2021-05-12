@@ -31,9 +31,9 @@ private:
     int nprocs;
     MPI_Comm comm;
 
-    std::pair<double, int> eval_times;
-    std::pair<double, int> cost_fn_times;
-    std::pair<double, int> epoch_times;
+    std::pair<double, int64_t> eval_times;
+    std::pair<double, int64_t> cost_fn_times;
+    std::pair<double, int64_t> epoch_times;
 public:
     DistribNeuralNet(int inlsize, const std::vector<int>& sizes, MPI_Comm& c);
     void update_W(float r, const vfloat& d, const vfloat& a);

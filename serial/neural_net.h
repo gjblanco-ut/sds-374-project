@@ -24,9 +24,9 @@ private:
     std::vector<Layer> layers;
     int output_layer_size;
 
-    std::pair<double, int> eval_times;
-    std::pair<double, int> cost_fn_times;
-    std::pair<double, int> epoch_times;
+    std::pair<double, int64_t> eval_times;
+    std::pair<double, int64_t> cost_fn_times;
+    std::pair<double, int64_t> epoch_times;
 public:
     NeuralNet(int inlsize, const std::vector<int>& sizes, int outlsize);
     void update_net_W(int l, float r, const vfloat& d, const vfloat& a);
