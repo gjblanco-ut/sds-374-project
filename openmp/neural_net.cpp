@@ -151,7 +151,7 @@ void NeuralNet::train(const int EPOCHS, const float r, const Dataset& dataset, c
 
     const int L = (int)layers.size();
     pair<int,int> previous_accuracy(0,1);
-    for(int i = 0; i < EPOCHS; i++) {
+    for(int i = 0; i < EPOCH; i++) {
         if(i % 10000 == 0) cout << "EPOCH " << i << endl;
         auto te1 = high_resolution_clock::now();
         int k = distrib(gen);
@@ -202,10 +202,11 @@ void NeuralNet::train(const int EPOCHS, const float r, const Dataset& dataset, c
             cout << cost << endl;
         }
         if(i % 10000 == 0) {
+            cout.precision(15);
             cout << ":::::Timing:::::\n";
-            cout << "Average time per evaluation ::: " << eval_times.first / eval_times.second / 1000. << " (sec) over " << eval_times.second << " times.\n";
-            cout << "Average time per epoch ::: "<< epoch_times.first / epoch_times.second / 1000. << " (sec) over " << epoch_times.second << " times.\n";
-            cout << "Average time for cost function evaluation ::: " << cost_fn_times.first / cost_fn_times.second / 1000. << " (sec) over " << cost_fn_times.second << " times.\n";
+            cout << "Average time per evaluation ::: " << eval_times.first / eval_times.second << " (msec) over " << eval_times.second << " times.\n";
+            cout << "Average time per epoch ::: "<< epoch_times.first / epoch_times.second << " (msec) over " << epoch_times.second << " times.\n";
+            cout << "Average time for cost function evaluation ::: " << cost_fn_times.first / cost_fn_times.second << " (msec) over " << cost_fn_times.second << " times.\n";
         }
         // if(i % 1000000 == 0) {
         //     print(net);

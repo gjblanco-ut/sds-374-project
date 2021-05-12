@@ -517,10 +517,11 @@ void DistribNeuralNet::train(const int EPOCHS, const float r, const Dataset& dat
             epoch_times.second++;
         }
         if(epoch % 10 == 0 && procno == 0) {
+            cout.precision(15);
             cout << ":::::Timing:::::\n";
-            cout << "Average time per evaluation ::: " << eval_times.first / eval_times.second / 1000. << " (sec) over " << eval_times.second  << " times.\n";
-            cout << "Average time per epoch ::: " << epoch_times.first / epoch_times.second / 1000. << " (sec) over " << epoch_times.second << " times.\n";
-            cout << "Average time for cost function evaluation ::: " << cost_fn_times.first / cost_fn_times.second / 1000. << " (sec) over " << cost_fn_times.second << " times.\n";
+            cout << "Average time per evaluation ::: " << eval_times.first / eval_times.second << " (msec) over " << eval_times.second  << " times.\n";
+            cout << "Average time per epoch ::: " << epoch_times.first / epoch_times.second << " (msec) over " << epoch_times.second << " times.\n";
+            cout << "Average time for cost function evaluation ::: " << cost_fn_times.first << " (msec) over " << cost_fn_times.second << " times.\n";
         }
     }
 }
