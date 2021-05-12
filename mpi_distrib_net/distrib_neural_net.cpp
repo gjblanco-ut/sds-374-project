@@ -206,13 +206,13 @@ double DistribNeuralNet::costval(const Dataset& dset, int ifirst, int ilast) {
     assert(ilast > ifirst);
     double total_norm = 0;
     for(int k = ifirst; k < ilast; k += EVAL_BATCH) {
-        MPI_Barrier(comm);
+        // MPI_Barrier(comm);
         auto t1 = high_resolution_clock::now();
         vector<pair<vfloat, int> > a = evaluate(dset, k, min(k + EVAL_BATCH, ilast));
-        MPI_Barrier(comm); // to measure time
+        // MPI_Barrier(comm); // to measure time
         if(procno == 0) {
             auto t2 = high_resolution_clock::now();
-            eval_times.first += duration_cast<milliseconds>(t2 - t1).count();
+            eval_times.first += duration_cast<milliseconds>(t2 - t1).count() / (min(k + EVAL_BATCH, ilast) - k);
             eval_times.second += min(k + EVAL_BATCH, ilast) - k;
         }
         
